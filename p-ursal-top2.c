@@ -7,11 +7,14 @@
 // =================================================================================
 //  Resultados
 //  file-011-big
-//      1 thread  - 21,61s user 0,26s system  99% cpu 21,878 total
-//      2 thread  - 31,09s user 0,22s system 199% cpu 15,724 total
-//      4 thread  - 32,19s user 0,24s system 314% cpu 10,298 total
-//      8 thread  - 32,22s user 0,25s system 353% cpu  9,186 total
-//      16 thread - 32,15s user 0,29s system 335% cpu  9,668 total
+//      
+//   threads = 1-> 22,34s user 0,20s system 99% cpu 22,564 total
+//   threads = 2-> 32,23s user 0,27s system 191% cpu 16,991 total
+//   threads = 3-> 29,47s user 0,35s system 223% cpu 13,353 total  
+//   threads = 4-> 29,85s user 0,32s system 265% cpu 11,343 total 
+//   threads = 8-> 32,30s user 0,41s system 275% cpu 11,891 total  
+//      
+//      
 // =================================================================================
 # include <stdio.h>
 # include <stdlib.h>
@@ -36,9 +39,17 @@ void resultado(void);
 // ================================  Main ========================================== 
 int main( int argc, char *argv[] )
 {
-
-    int max_threads;
+    int num_th, sum;
+    int i, j, n, fsize, num_reg;
+    int sfe[3];
+    int sfe_offset[3];
+    int num_votos, votos_val, votos_pres;
+    float percent;
+    FILE *fp;
+    Candidato **reg_votos_global;
+    Candidato reg_votos_global_res[MAX];
     double start, wtime;
+    
     wtime = start = omp_get_wtime();
 
     if(argc < 2)
@@ -48,25 +59,29 @@ int main( int argc, char *argv[] )
     }
 
     if( argc == 3)
-        max_threads = strtol(argv[2], NULL, 10);
+        num_th = strtol(argv[2], NULL, 10);
     else
-        max_threads = 1;                            //sem argv[2] -> sequencial
+        num_th = 1;                            //sem argv[2] -> sequencial
 
 // =================================================================================
-    int i, j, n, fsize, num_reg;
-    int sfe[3];
-    int sfe_offset[3];
-    int num_votos, votos_val, votos_pres;
-    float percent;
-    FILE *fp;
-    Candidato reg_votos_global[MAX];
 
-    memset(reg_votos_global, 0, sizeof(Candidato) * MAX);
+    
+    int linha_res = num_th + 1;
+
+    reg_votos_global = (Candidato**) calloc((linha_res), sizeof(Candidato*));
+    
+    for(i = 0; i < linha_res; i++)
+        reg_votos_global[i] = (Candidato*) calloc(MAX, sizeof(Candidato));        
+
+    memset(reg_votos_global_res, 0, sizeof(Candidato) * MAX);
+
     fp = fopen(argv[1], "r");
 
     sfe_offset[0] = s_offset;
     sfe_offset[1] = f_offset;
     sfe_offset[2] = e_offset;
+    
+    num_votos = votos_val = votos_pres = num_reg = 0;
     
     for(i = 0; i < 3; i++)
         fscanf(fp, "%d", &sfe[i]);
@@ -75,34 +90,15 @@ int main( int argc, char *argv[] )
     fsize = ftell(fp) - 1;
   
     rewind(fp);
-
-    wtime = omp_get_wtime() - wtime;
-    printf("leitura incial = %f\n", wtime);
-    wtime = omp_get_wtime() ;
-
-    num_votos = 0;
-    // while ((fscanf(fp, "%d", &n))!= EOF )
-    // {
-    //     // printf("linha[%3d] = %5d -> ftell: %d\n", num_votos + 1, n, ftell(fp));
-    //     num_votos++;
-    // }
-    // printf("\n--------------------------------\n");
-    // printf("count = %d\n", num_votos);
-    // printf("\n--------------------------------\n");
-    // num_votos = 0;
-    
 //==============================================================================
     wtime = omp_get_wtime() - wtime;
-    printf("time contagem de linhas= %f\n", wtime);
-    wtime = omp_get_wtime() ;
+    printf("antes do bloco paralelo = %f\n", wtime);
+    wtime = omp_get_wtime();
     
-    # pragma omp parallel num_threads(max_threads) \
-    reduction(+: num_votos) reduction(+: votos_pres)  //reduction(+:reg_votos_global[100])
+    # pragma omp parallel num_threads(num_th) 
+    // reduction(+: num_votos) reduction(+: votos_pres)
     {
         int id_th = omp_get_thread_num();
-        int num_th = omp_get_num_threads();
-
-        Candidato reg_votos_local[MAX];
         FILE *fp = fopen(argv[1], "r");
 
         int i, voto;
@@ -112,7 +108,7 @@ int main( int argc, char *argv[] )
         bloco = fsize / num_th;
         inicio = bloco * id_th;
         fim = inicio + bloco;
-
+        
         fseek(fp, inicio, SEEK_SET);
         while(fgetc(fp) != '\n');
 
@@ -121,68 +117,89 @@ int main( int argc, char *argv[] )
             fscanf(fp, "%d", &voto);
             if(voto > 0)
             {
-                // reg_votos_local[voto].cont_votos++;
-                // reg_votos_local[voto].id = voto;
+                // reg_votos_global[id_th][voto].id = voto;
+                reg_votos_global[id_th][voto].cont_votos++;
 
-            #pragma omp atomic
-                reg_votos_global[voto].cont_votos++;
-
-                reg_votos_global[voto].id = voto;
-                
                 if( voto < 100)
-                    votos_pres++;
-
-                votos_val++;
+                    #pragma omp atomic
+                        votos_pres++;
+                
             }
-            num_votos++;
+            #pragma omp atomic
+                num_votos++;
             inicio = ftell(fp);
         }
         fclose(fp);
 
+    }    // Fim pragma Parallel
+//==============================================================================
+    
+    wtime = omp_get_wtime() - wtime;
+    printf("bloco paralelo = %f\n", wtime);
+    wtime = omp_get_wtime(); 
+    
+    //consolidar votos das threads
+// #pragma omp parallel for private(sum)  private(j)
+    for( i = 0; i < MAX; i++)
+    {
+        sum = 0;
+        for( j = 0; j < num_th; j++)
+            if (reg_votos_global[j][i].cont_votos != 0 )
+                sum += reg_votos_global[j][i].cont_votos;
+        
+        if(sum){
+            reg_votos_global_res[i].id = i;
+            reg_votos_global_res[i].cont_votos = sum;
+            votos_val += sum;
+        }
     }
 
-
-
+    for(i = 0; i < num_th; i++)
+        free(reg_votos_global[i]);
+    
+    free(reg_votos_global);
+//==============================================================================
     wtime = omp_get_wtime() - wtime;
-    printf("time bloco paralelo = %f\n", wtime);
-    wtime = omp_get_wtime() ;
+    printf("time consolidar matriz = %f\n", wtime);
+    wtime = omp_get_wtime();
+
+    // printf("==================================================================\n");
 
           // ponteiro posicao inicio    tamanho
-    qsort(reg_votos_global           ,  p_offset            , sizeof(Candidato), comparaVotos);
-    qsort(reg_votos_global + p_offset, (s_offset - p_offset), sizeof(Candidato), comparaVotos);
-    qsort(reg_votos_global + s_offset, (f_offset - s_offset), sizeof(Candidato), comparaVotos);
-    qsort(reg_votos_global + f_offset, (e_offset - f_offset), sizeof(Candidato), comparaVotos);
+    qsort(reg_votos_global_res           ,  p_offset            , sizeof(Candidato), comparaVotos);
+    qsort(reg_votos_global_res + p_offset, (s_offset - p_offset), sizeof(Candidato), comparaVotos);
+    qsort(reg_votos_global_res + s_offset, (f_offset - s_offset), sizeof(Candidato), comparaVotos);
+    qsort(reg_votos_global_res + f_offset, (e_offset - f_offset), sizeof(Candidato), comparaVotos);
     
     wtime = omp_get_wtime() - wtime;
     printf("time sort = %f\n", wtime);
     wtime = omp_get_wtime();
+
 //------------------------------------------------------------------------------
     
-    percent = (reg_votos_global[99].cont_votos * 100) / votos_pres;
+    percent = (reg_votos_global_res[99].cont_votos * 100) / votos_pres;
 
     printf("%d %d\n", votos_val, num_votos - votos_val);
 
     if(percent > 51)
-        printf("%d\n", reg_votos_global[99].id);
+        printf("%d\n", reg_votos_global_res[99].id);
     else 
         printf("Segundo turno\n");
     
     for(j = 0; j < 3; j++)
     {
-        printf("%d", reg_votos_global[sfe_offset[j] - 1].id);
+        printf("%d", reg_votos_global_res[sfe_offset[j] - 1].id);
         for(i = 2; i <= sfe[j]; i++)
-            printf(" %d", reg_votos_global[sfe_offset[j] -i].id);
+            printf(" %d", reg_votos_global_res[sfe_offset[j] -i].id);
         
         printf("\n");
     }
 
-        
     wtime = omp_get_wtime() - wtime;
-    start = omp_get_wtime() - start;
-    printf("\n\n Completo = %f\n", start);
+    printf("\n\n display dados = %f\n", wtime);
     return (EXIT_SUCCESS);
 }
-// ===========================  Sub Programas ================================== 
+// =========================== Sub Programas =================================== 
 
 int comparaVotos (const void *x, const void *y) 
 {
