@@ -7,11 +7,7 @@
 // =================================================================================
 //  Resultados
 //  file-011-big
-//      1 thread  - 22,21s user 0,27s system  99% cpu 22,481 total
-//      2 thread  - 33,19s user 0,18s system 199% cpu 16,762 total
-//      4 thread  - 62,64s user 0,26s system 361% cpu 17,412 total
-//      8 thread  - 63,85s user 0,29s system 346% cpu 18,530 total
-//      16 thread - 62,51s user 0,46s system 344% cpu 18,262 total
+//      4 thread  - 121,08s user 1,27s system 305% cpu 40,089 total
 // =================================================================================
 # include <stdio.h>
 # include <stdlib.h>
@@ -78,12 +74,7 @@ int main( int argc, char *argv[] )
         fscanf(fp, "%d", &sfe[i]);
 
 //==============================================================================
-    wtime = omp_get_wtime() - wtime;
-    printf("antes do bloco paralelo = %f\n", wtime);
-    wtime = omp_get_wtime() ;
-    
-    # pragma omp parallel num_threads(max_threads) \
-    reduction(+: num_votos) reduction(+: votos_pres)  //reduction(+:reg_votos_global[100])
+    # pragma omp parallel num_threads(max_threads)
     {
         int id_th = omp_get_thread_num();
         int num_th = omp_get_num_threads();
@@ -112,38 +103,34 @@ int main( int argc, char *argv[] )
             fscanf(fp, "%d", &voto);
             if(voto > 0)
             {
-                // reg_votos_local[voto].cont_votos++;
-                // reg_votos_local[voto].id = voto;
-
-            #pragma omp critical
-                reg_votos_global[voto].cont_votos++;
-
+                #pragma omp critical
+                {
+                    reg_votos_global[voto].cont_votos++;
+                    votos_val++;
+                }
                 reg_votos_global[voto].id = voto;
                 
-                if( voto < 100)
-                    votos_pres++;
 
-                votos_val++;
+                if( voto < 100){
+                    #pragma omp critical
+                        votos_pres++;
+                }
+
             }
-            num_votos++;
+            #pragma omp critical
+                num_votos++;
+
             inicio = ftell(fp);
         }
         fclose(fp);
 
     }
-    wtime = omp_get_wtime() - wtime;
-    printf("time bloco paralelo = %f\n", wtime);
-    wtime = omp_get_wtime() ;
-
           // ponteiro posicao inicio    tamanho
     qsort(reg_votos_global           ,  p_offset            , sizeof(Candidato), comparaVotos);
     qsort(reg_votos_global + p_offset, (s_offset - p_offset), sizeof(Candidato), comparaVotos);
     qsort(reg_votos_global + s_offset, (f_offset - s_offset), sizeof(Candidato), comparaVotos);
     qsort(reg_votos_global + f_offset, (e_offset - f_offset), sizeof(Candidato), comparaVotos);
     
-    wtime = omp_get_wtime() - wtime;
-    printf("time sort = %f\n", wtime);
-    wtime = omp_get_wtime();
 //------------------------------------------------------------------------------
     
     percent = (reg_votos_global[99].cont_votos * 100) / votos_pres;
@@ -155,17 +142,15 @@ int main( int argc, char *argv[] )
     else 
         printf("Segundo turno\n");
     
-    // for(j = 0; j < 3; j++)
-    // {
-    //     for(i = 1; i <= sfe[j]; i++)
-    //         printf("%d ", reg_votos_global[sfe_offset[j] -i].id);
-    //     printf("\n");
-    // }
-
+      for(j = 0; j < 3; j++)
+    {
+        printf("%d", reg_votos_global[sfe_offset[j] - 1].id);
+        for(i = 2; i <= sfe[j]; i++)
+            printf(" %d", reg_votos_global[sfe_offset[j] -i].id);
         
-    wtime = omp_get_wtime() - wtime;
-    start = omp_get_wtime() - start;
-    printf("\n\n Completo = %f\n", start);
+        printf("\n");
+    }
+
     return (EXIT_SUCCESS);
 }
 // ===========================  Sub Programas ================================== 
@@ -183,7 +168,4 @@ int comparaVotos (const void *x, const void *y)
     else 
         return (c - d);
 }
-//===============================================================================
-
-
 //===============================================================================
